@@ -133,7 +133,10 @@ pip install transformers torch accelerate huggingface_hub
 - Authenticate: `huggingface-cli login`
 
 ### 3. Enable the model
-In any of the pipeline files, uncomment the model loading block at the top and the production block inside `call_medgemma()`.
+In `adi_guard_complete.py`, the model loads automatically. 
+In `adi_guard.py` and `adi_guard_batch.py`, uncomment lines 23-30 
+(the model loading block) and lines 42-48 (inside `call_medgemma`).
+
 
 ### 4. Run
 ```bash
