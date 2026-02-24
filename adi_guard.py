@@ -419,6 +419,120 @@ def run_adi_guard(patient_data: dict, ad_text: str) -> dict:
 
 # ── Demo ───────────────────────────────────────────────────────────────────────
 
+def run_interactive():
+    """
+    Interactive mode: clinician inputs patient data and AD text,
+    gets a real-time discrepancy report.
+    """
+    print("\n" + "=" * 60)
+    print("  ADI-GUARD — Interactive Clinical Review Mode")
+    print("=" * 60)
+
+    print("\nPATIENT INFORMATION")
+    patient_id   = input("  Patient ID         : ").strip() or "patient-001"
+    patient_name = input("  Patient Name       : ").strip() or "Unknown Patient"
+    age          = int(input("  Age                : ").strip() or "70")
+    icu          = input("  ICU Admission? (y/n): ").strip().lower() == "y"
+    conditions   = input("  Chronic Conditions (comma separated): ").strip()
+    conditions   = [c.strip() for c in conditions.split(",")] if conditions else []
+    prognosis    = input("  Poor 6-month prognosis? (y/n): ").strip().lower() == "y"
+
+    print("\nPaste the patient's Advance Directive text below.")
+    print("When finished, type END on a new line and press Enter:")
+    lines = []
+    while True:
+        line = input()
+        if line.strip().upper() == "END":
+            break
+        lines.append(line)
+    ad_text = "\n".join(lines)
+
+    patient_data = {
+        "id": patient_id,
+        "name": patient_name,
+        "age": age,
+        "icu_admission": icu,
+        "chronic_conditions": conditions,
+        "six_month_prognosis": prognosis
+    }
+
+    report = run_adi_guard(patient_data, ad_text)
+
+    output_path = f"adi_guard_report_{patient_id}.json"
+    with open(output_path, "w") as f:
+        json.dump(report, f, indent=2)
+
+    print(f"\n  Full FHIR Bundle report saved to: {output_path}")
+
+    if report.get("ConflictFlag"):
+        print("\n  KEY CONFLICTS:")
+        for c in report.get("Conflicts", []):
+            print(f"\n  [{c['severity']}]")
+            print(f"  Directive : {c['directive']}")
+            print(f"  Care Plan : {c['care_plan']}")
+            print(f"  LOINC     : {c['loinc_code']}")
+            print(f"  SNOMED    : {c['snomed_code']}")
+            print(f"  Reason    : {c['explanation']}")
+
+    print(f"\n  ACTION: {report.get('RecommendedAction')}")
+
+
+def run_demo():
+    """
+    Demo mode: runs the full pipeline on a pre-loaded patient case
+    showing a realistic conflict scenario. No input required.
+    """
+    patient_data = {
+        "id": "patient-001",
+        "name": "Frank Morrison",
+        "age": 78,
+        "icu_admission": True,
+        "chronic_conditions": ["end-stage kidney disease", "dialysis-dependent"],
+        "six_month_prognosis": True
+    }
+
+    advance_directive_text = """
+    ADVANCE DIRECTIVE - Frank Morrison - DOB: 03/14/1948
+
+    I, Frank Morrison, being of sound mind, hereby state my wishes for medical care
+    if I become unable to communicate or make decisions for myself.
+
+    RESUSCITATION: I do NOT want cardiopulmonary resuscitation (CPR) performed.
+    Do Not Resuscitate (DNR). Do Not Attempt Resuscitation (DNAR).
+
+    LIFE-SUSTAINING TREATMENT: I do not want life-sustaining treatment if there is
+    no reasonable chance of recovery. This includes mechanical ventilation,
+    dialysis beyond my current regimen, and artificial nutrition or hydration.
+
+    COMFORT CARE: I want comfort measures only — pain management and palliative care.
+    I do not want to be transferred to a hospital if my condition worsens.
+
+    HEALTHCARE AGENT: My daughter Mary Johnson (555-0142) is my primary healthcare
+    agent and has full authority to make medical decisions on my behalf.
+
+    Signed: Frank Morrison    Date: January 10, 2026
+    Witness: Dr. Sarah Chen   Notary: James Wilson
+    """
+
+    report = run_adi_guard(patient_data, advance_directive_text)
+
+    output_path = "adi_guard_report.json"
+    with open(output_path, "w") as f:
+        json.dump(report, f, indent=2)
+
+    print(f"\n  Full FHIR Bundle report saved to: {output_path}")
+    print("\n  KEY CONFLICTS FOUND:")
+    for conflict in report.get("Conflicts", []):
+        print(f"\n  [{conflict['severity']}]")
+        print(f"  Directive : {conflict['directive']}")
+        print(f"  Care Plan : {conflict['care_plan']}")
+        print(f"  LOINC     : {conflict['loinc_code']}")
+        print(f"  SNOMED    : {conflict['snomed_code']}")
+        print(f"  Reason    : {conflict['explanation']}")
+
+    print(f"\n  RECOMMENDED ACTION:\n  {report.get('RecommendedAction')}")
+
+
 if __name__ == "__main__":
 
     # Sample patient (based on PACIO ADI use case — Frank)
@@ -456,23 +570,9 @@ if __name__ == "__main__":
     Witness: Dr. Sarah Chen   Notary: James Wilson
     """
 
-    # Run the full pipeline
-    report = run_adi_guard(patient_data, advance_directive_text)
 
-    # Save output
-    output_path = "adi_guard_report.json"
-    with open(output_path, "w") as f:
-        json.dump(report, f, indent=2)
-
-    print(f"\n  Full FHIR Bundle report saved to: {output_path}")
-    print("\n  KEY CONFLICTS FOUND:")
-    for conflict in report.get("Conflicts", []):
-        print(f"\n  [{conflict['severity']}]")
-        print(f"  Directive : {conflict['directive']}")
-        print(f"  Care Plan : {conflict['care_plan']}")
-        print(f"  LOINC     : {conflict['loinc_code']}")
-        print(f"  SNOMED    : {conflict['snomed_code']}")
-        print(f"  Reason    : {conflict['explanation']}")
-
-    print("\n  RECOMMENDED ACTION:")
-    print(f"  {report.get('RecommendedAction')}")
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--interactive":
+        run_interactive()
+    else:
+        run_demo()
