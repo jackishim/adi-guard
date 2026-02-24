@@ -6,61 +6,101 @@
 
 ## The Problem
 
-Between **65-76% of physicians whose patients have an advance directive are entirely unaware of its existence.** Among patients admitted to emergency departments, only **4.8%** have an accessible advance care plan. When patients are transferred between facilities, their documented end-of-life wishes routinely disappear — leading to patients receiving care that directly contradicts what they legally documented they wanted.
+Every day, patients receive care that directly contradicts what they legally documented they wanted. A 78-year-old with a DNR order gets resuscitated. A patient who refused mechanical ventilation gets intubated. Not because doctors don't care — but because the system fails to connect the document to the decision.
 
-This is not a documentation problem. It is a **clinical intelligence problem.**
+**65-76% of physicians are entirely unaware when their patient has an advance directive.** Among patients admitted to emergency departments, only **4.8%** have an accessible advance care plan. When patients transfer between facilities, their documented wishes routinely disappear.
+
+Tools like MyDirectives solve the storage problem — they make the document accessible. **ADI-Guard solves what comes next:** the moment a doctor is about to make a treatment decision and needs to know immediately whether it violates their patient's legal wishes.
 
 ---
 
 ## The Solution
 
-ADI-Guard is an agentic AI application built on **MedGemma** that autonomously:
+ADI-Guard is an intelligent clinical layer powered by **MedGemma** that sits between the doctor and the patient's advance directive. Before any treatment is administered, the doctor checks with ADI-Guard. It reads the full AD document, compares it against the proposed care plan, and flags every conflict — in real time, entirely on local infrastructure.
 
-1. **Identifies** high-risk patients who need advance directive review
-2. **Extracts** structured preferences from unstructured AD documents (paper, PDF, legacy formats)
-3. **Detects** internal inconsistencies within the directive itself
-4. **Cross-references** the advance directive against the patient's active care plan
-5. **Generates** a structured FHIR-aligned discrepancy report for clinician review
-
-The human clinician always makes the final call. ADI-Guard ensures nothing falls through the cracks.
+**No patient data leaves the hospital network. Ever.**
 
 ---
 
 ## Architecture
 
 ```
-Patient Data + AD Document
+Doctor proposes treatment
         │
         ▼
-┌───────────────────────┐
-│  STEP 1: Risk ID      │  MedGemma analyzes patient history
-│  High-risk flagging   │  age, diagnosis, prognosis
-└──────────┬────────────┘
+┌─────────────────────────┐
+│  Patient Lookup         │  Query AD registry / EHR / MyDirectives
+│  FHIR RESTful API       │  GET /DocumentReference?patient={id}
+└──────────┬──────────────┘
            │
            ▼
-┌───────────────────────┐
-│  STEP 2: AD Extraction│  MedGemma parses unstructured text
-│  NLP preference parse │  → structured FHIR resources
-└──────────┬────────────┘
+┌─────────────────────────┐
+│  AD Extraction          │  MedGemma reads full document
+│  MedGemma NLP           │  Extracts structured preferences
+└──────────┬──────────────┘
            │
            ▼
-┌───────────────────────┐
-│  STEP 3: Care Plan    │  FHIR RESTful API query
-│  EHR retrieval        │  GET /CarePlan?patient={id}&status=active
-└──────────┬────────────┘
+┌─────────────────────────┐
+│  Conflict Detection     │  MedGemma compares AD vs proposed treatment
+│  MedGemma Reasoning     │  Maps to LOINC + SNOMED-CT codes
+└──────────┬──────────────┘
            │
            ▼
-┌───────────────────────┐
-│  STEP 4: Conflict     │  MedGemma detects discrepancies
-│  Detection            │  Maps to LOINC + SNOMED-CT codes
-└──────────┬────────────┘
-           │
-           ▼
-┌───────────────────────┐
-│  STEP 5: FHIR Report  │  Structured Bundle output
-│  Clinician alert      │  LOINC 100826-7 / LA33478-1
-└───────────────────────┘
+┌─────────────────────────┐
+│  Clinical Alert         │  FHIR Bundle report generated locally
+│  Clinician Review       │  Doctor makes the final decision
+└─────────────────────────┘
 ```
+
+---
+
+## Three Ways to Use ADI-Guard
+
+### 1. Pre-Treatment Clinical Check (`adi_guard_complete.py`)
+The primary interface. Doctor enters a patient name and proposed treatment. ADI-Guard reads the full advance directive and returns a conflict report before any treatment is administered.
+
+```
+Enter patient name or ID: Frank Morrison
+Proposed treatment: Full resuscitation, mechanical ventilation, IV nutrition support
+
+[1/3] Reading advance directive with MedGemma...
+[2/3] Comparing proposed treatment against advance directive...
+[3/3] Generating clinical alert...
+
+🚨 2 CRITICAL CONFLICTS DETECTED
+
+CONFLICT 1 [CRITICAL]
+Patient's AD    : Do NOT want mechanical ventilation
+Proposed Action : Mechanical ventilation
+LOINC           : 81351-9
+Legal Risk      : Violation of patient autonomy
+
+CONFLICT 2 [CRITICAL]
+Patient's AD    : Do NOT want CPR / DNR on file
+Proposed Action : Full resuscitation protocol
+LOINC           : 81351-9
+Legal Risk      : Potential Patient Self-Determination Act violation
+
+MEDGEMMA CLINICAL ALERT:
+URGENT: Patient's advance directive explicitly prohibits mechanical
+ventilation and CPR. Proceeding will directly conflict with documented
+wishes and may violate the Patient Self-Determination Act.
+```
+
+### 2. Batch Pipeline (`adi_guard_batch.py`)
+Runs the full pipeline on every patient in `patients.csv`. A hospital can run this every morning across all admitted patients and catch conflicts before rounds begin.
+
+```
+python adi_guard_batch.py
+
+Loaded 5 patient(s) from patients.csv
+🚨 Conflicts flagged : 3
+✅ Concordant        : 2
+All reports saved to: /reports/
+```
+
+### 3. Single Patient Pipeline (`adi_guard.py`)
+The original five-step agentic pipeline demonstrating the full MedGemma workflow for a single patient case.
 
 ---
 
@@ -71,7 +111,7 @@ Built to the **HL7 FHIR Advance Healthcare Directive Interoperability (ADI) Impl
 | Component | Standard |
 |-----------|----------|
 | Output format | FHIR Bundle resource |
-| AD preferences | LOINC panel 75772-4 |
+| AD preference panel | LOINC 75772-4 |
 | DNR status | LOINC 81351-9 / SNOMED 143021000119109 |
 | Intubation preference | LOINC 75787-2 |
 | Nutrition preference | LOINC 75788-0 |
@@ -89,66 +129,55 @@ pip install transformers torch accelerate huggingface_hub
 
 ### 2. Get MedGemma access
 - Visit: https://huggingface.co/google/medgemma-4b-it
-- Accept the license agreement (requires HuggingFace account)
+- Accept the license agreement
 - Authenticate: `huggingface-cli login`
 
-### 3. Enable the model in adi_guard.py
-Uncomment the model loading block at the top of `adi_guard.py`:
-```python
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
+### 3. Enable the model
+In any of the pipeline files, uncomment the model loading block at the top and the production block inside `call_medgemma()`.
 
-MODEL_ID = "google/medgemma-4b-it"
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_ID,
-    torch_dtype=torch.bfloat16,
-    device_map="auto",
-)
-```
-And uncomment the `call_medgemma()` production block.
-
-### 4. Run the demo
+### 4. Run
 ```bash
+# Pre-treatment clinical check (primary interface)
+python adi_guard_complete.py
+
+# Batch processing from CSV
+python adi_guard_batch.py
+
+# Single patient demo
 python adi_guard.py
 ```
 
+### Google Colab (Recommended for Demo)
+See the included Colab notebook. Load MedGemma on a T4 GPU and run `adi_guard_complete.py` as a cell. Free tier works with Colab Pro.
+
 ---
 
-## Example Output
+## Privacy & Security
 
-```
-============================================================
-  ADI-GUARD: Advance Directive Intelligence Agent
-  Powered by MedGemma | PACIO FHIR ADI STU2 Aligned
-============================================================
+ADI-Guard is designed for deployment on local hospital infrastructure:
 
-[STEP 1] Identifying high-risk patient...
-  Status: HIGH RISK
-  ✓ Age >= 65
-  ✓ ICU admission
-  ✓ Chronic conditions: end-stage kidney disease, dialysis-dependent
-  ✓ Poor 6-month prognosis
+- All MedGemma inference runs on-device
+- No patient data is transmitted to external servers
+- No cloud API calls during inference
+- HIPAA-compliant by architecture
+- Reports saved locally in FHIR-aligned JSON format
 
-[STEP 2] Extracting advance directive preferences with MedGemma...
-  Extracted 9 preference categories
+---
 
-[STEP 3] Retrieving current care plan from EHR...
-  Found 5 active orders
+## patients.csv Format
 
-[STEP 4] Detecting conflicts between advance directive and care plan...
-  ⚠️  3 conflict(s) detected
-  [CRITICAL] DNR - Do Not Resuscitate ←→ Full resuscitation protocol active
-  [CRITICAL] NO mechanical ventilation ←→ Mechanical ventilation - ongoing
-  [HIGH]     NO artificial nutrition  ←→ IV nutrition support initiated
+Hospitals add patients by filling in one row per patient:
 
-[STEP 5] Generating clinical discrepancy report...
-  Report generated successfully.
-
-============================================================
-  🚨 RESULT: CRITICAL CONFLICTS DETECTED — CLINICIAN REVIEW REQUIRED
-============================================================
-```
+| Column | Description |
+|--------|-------------|
+| patient_id | Unique identifier |
+| patient_name | Full name |
+| age | Integer |
+| icu_admission | True/False |
+| chronic_conditions | Comma-separated list |
+| six_month_prognosis | True/False |
+| advance_directive | Full text of AD document |
+| current_care_plan | Full text of active orders |
 
 ---
 
@@ -160,7 +189,7 @@ python adi_guard.py
 | Emergency patients without accessible AD | 95.2% |
 | Time saved vs. manual chart review | ~115 min/patient |
 | Institutional cost savings (reported) | Up to 25% |
-| Penn Medicine ACP conversation increase | 4x (quadrupled) |
+| Penn Medicine ACP conversation increase | 4x |
 
 ---
 
@@ -182,3 +211,5 @@ Social work researcher specializing in health interoperability, care coordinatio
 - Shankar, Devi & Xu (2026). Effectiveness of digital tools in promoting advance care planning. *Frontiers in Medicine*, 12.
 - PACIO Community. HL7 FHIR Advance Healthcare Directive Interoperability IG STU2. https://build.fhir.org/ig/HL7/fhir-pacio-adi/
 - Yadav et al. Epidemiology of advance directives in a large patient population. *JAMA Internal Medicine*.
+- Penn Medicine AI-Driven ACP Intervention. Quadrupling ACP conversations in oncology.
+- NYU Langone Health. Real-Time Mortality Risk Alerts for ACP.
