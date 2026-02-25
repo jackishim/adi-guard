@@ -1,13 +1,33 @@
 """
 ADI-Guard: Complete Clinical Interface
 =======================================
-Paste this as a SINGLE cell in Colab and run it.
-Requires cells 1 (install/auth) and 2 (load MedGemma) to have run first.
+Run with: python adi_guard_complete.py
+
+Setup:
+    1. pip install transformers torch accelerate huggingface_hub
+    2. Visit https://huggingface.co/google/medgemma-4b-it and accept the license
+    3. Run: huggingface-cli login
+    4. Uncomment the MedGemma Setup block below
 """
 
 import json
 import torch
 from datetime import datetime
+
+# ── MedGemma Setup ─────────────────────────────────────────────────────────────
+# Uncomment after completing setup steps above
+#
+# from transformers import AutoTokenizer, AutoModelForCausalLM
+# MODEL_ID = "google/medgemma-4b-it"
+# print("Loading MedGemma (this may take a few minutes)...")
+# tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+# model = AutoModelForCausalLM.from_pretrained(
+#     MODEL_ID,
+#     torch_dtype=torch.float16,
+#     device_map="auto",
+# )
+# print("MedGemma loaded.\n")
+
 
 # ── MedGemma call ─────────────────────────────────────────────────────────────
 
@@ -161,7 +181,6 @@ Return ONLY valid JSON."""
         end = raw.rfind("}") + 1
         return json.loads(raw[start:end])
     except:
-        # If JSON parse fails, MedGemma still found conflicts — extract from raw
         return {
             "conflicts_found": True,
             "conflict_count": 1,
